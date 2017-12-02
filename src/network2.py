@@ -132,7 +132,8 @@ class Network(object):
             monitor_evaluation_cost=False,
             monitor_evaluation_accuracy=False,
             monitor_training_cost=False,
-            monitor_training_accuracy=False):
+            monitor_training_accuracy=False,
+            regularization="L2"):
         """Train the neural network using mini-batch stochastic gradient
         descent.  The ``training_data`` is a list of tuples ``(x, y)``
         representing the training inputs and the desired outputs.  The
@@ -141,7 +142,9 @@ class Network(object):
         ``evaluation_data``, usually either the validation or test
         data.  We can monitor the cost and accuracy on either the
         evaluation data or the training data, by setting the
-        appropriate flags.  The method returns a tuple containing four
+        appropriate flags.  We can set the regularization type by
+        setting the value to "L1" or "L2". Default value for
+        regularization is "L2". The method returns a tuple containing four
         lists: the (per-epoch) costs on the evaluation data, the
         accuracies on the evaluation data, the costs on the training
         data, and the accuracies on the training data.  All values are
@@ -163,10 +166,10 @@ class Network(object):
                 for k in xrange(0, n, mini_batch_size)]
             for mini_batch in mini_batches:
                 self.update_mini_batch(
-                    mini_batch, eta, lmbda, len(training_data))
+                    mini_batch, eta, lmbda, len(training_data), regularization)
             print "Epoch %s training complete" % j
             if monitor_training_cost:
-                cost = self.total_cost(training_data, lmbda)
+                cost = self.total_cost(training_data, lmbda, regularization)
                 training_cost.append(cost)
                 print "Cost on training data: {}".format(cost)
             if monitor_training_accuracy:
@@ -175,7 +178,7 @@ class Network(object):
                 print "Accuracy on training data: {} / {}".format(
                     accuracy, n)
             if monitor_evaluation_cost:
-                cost = self.total_cost(evaluation_data, lmbda, convert=True)
+                cost = self.total_cost(evaluation_data, lmbda, regularization, convert=True)
                 evaluation_cost.append(cost)
                 print "Cost on evaluation data: {}".format(cost)
             if monitor_evaluation_accuracy:
@@ -187,12 +190,13 @@ class Network(object):
         return evaluation_cost, evaluation_accuracy, \
             training_cost, training_accuracy
 
-    def update_mini_batch(self, mini_batch, eta, lmbda, n):
+    def update_mini_batch(self, mini_batch, eta, lmbda, n, regularization):
         """Update the network's weights and biases by applying gradient
         descent using backpropagation to a single mini batch.  The
         ``mini_batch`` is a list of tuples ``(x, y)``, ``eta`` is the
         learning rate, ``lmbda`` is the regularization parameter, and
-        ``n`` is the total size of the training data set.
+        ``n`` is the total size of the training data set. ``regularization``
+        type can be set to the value of "L1" or "L2".
 
         """
         nabla_b = [np.zeros(b.shape) for b in self.biases]
@@ -201,8 +205,12 @@ class Network(object):
             delta_nabla_b, delta_nabla_w = self.backprop(x, y)
             nabla_b = [nb+dnb for nb, dnb in zip(nabla_b, delta_nabla_b)]
             nabla_w = [nw+dnw for nw, dnw in zip(nabla_w, delta_nabla_w)]
-        self.weights = [(1-eta*(lmbda/n))*w-(eta/len(mini_batch))*nw
-                        for w, nw in zip(self.weights, nabla_w)]
+        if regularization == 'L1':
+            self.weights = [w-eta*(lmbda/n)*np.sign(w)-(eta/len(mini_batch))*nw
+                            for w, nw in zip(self.weights, nabla_w)]
+        if regularization == 'L2':
+            self.weights = [(1-eta*(lmbda/n))*w-(eta/len(mini_batch))*nw
+                            for w, nw in zip(self.weights, nabla_w)]
         self.biases = [b-(eta/len(mini_batch))*nb
                        for b, nb in zip(self.biases, nabla_b)]
 
@@ -271,20 +279,25 @@ class Network(object):
                         for (x, y) in data]
         return sum(int(x == y) for (x, y) in results)
 
-    def total_cost(self, data, lmbda, convert=False):
+    def total_cost(self, data, lmbda, regularization, convert=False):
         """Return the total cost for the data set ``data``.  The flag
         ``convert`` should be set to False if the data set is the
         training data (the usual case), and to True if the data set is
         the validation or test data.  See comments on the similar (but
         reversed) convention for the ``accuracy`` method, above.
+        ``regularization`` type can be set to the value of "L1" or "L2".
         """
         cost = 0.0
         for x, y in data:
             a = self.feedforward(x)
             if convert: y = vectorized_result(y)
             cost += self.cost.fn(a, y)/len(data)
-        cost += 0.5*(lmbda/len(data))*sum(
-            np.linalg.norm(w)**2 for w in self.weights)
+        if regularization == 'L1':
+            cost += (lmbda/len(data))*sum(
+                np.linalg.norm(np.absolute(w)) for w in self.weights)
+        if regularization == 'L2':
+            cost += 0.5*(lmbda/len(data))*sum(
+                np.linalg.norm(w)**2 for w in self.weights)
         return cost
 
     def save(self, filename):
